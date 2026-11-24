@@ -1,0 +1,256 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Alumni member profile with batch, blood group, location, privacy flag, RBAC role, and verification status.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID matching document ID." },
+        "email": { "type": "string", "description": "Authenticated Google email." },
+        "name": { "type": "string", "description": "Full name of the alumnus." },
+        "phone": { "type": "string", "description": "Publicly visible phone number or masked placeholder when hidePhone is true." },
+        "hidePhone": { "type": "boolean", "description": "Privacy toggle hiding real phone number from public directory." },
+        "sscBatch": { "type": "string", "description": "SSC passing year (e.g. 2015)." },
+        "bloodGroup": { "type": "string", "enum": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] },
+        "lastBloodDonateDate": { "type": "string", "format": "date-time", "description": "Optional timestamp of last blood donation." },
+        "profession": { "type": "string", "description": "Current profession or designation." },
+        "city": { "type": "string", "description": "Current city of residence." },
+        "country": { "type": "string", "description": "Current country of residence." },
+        "photoUrl": { "type": "string", "description": "Optional profile photo URL or compressed JPEG data URI." },
+        "role": { "type": "string", "enum": ["admin", "moderator", "member"] },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "visibleToUids": { "type": "array", "description": "Bounded list of UIDs (owner and batch moderators) permitted to query pending profile." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": ["uid", "name", "phone", "hidePhone", "sscBatch", "bloodGroup", "profession", "city", "country", "role", "status", "createdAt"]
+    },
+    "UserPrivateContact": {
+      "title": "UserPrivateContact",
+      "description": "Private contact record isolated to profile owner and Super Admin when hidePhone is enabled.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "phone": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "phone", "updatedAt"]
+    },
+    "UserNotificationPrefs": {
+      "title": "UserNotificationPrefs",
+      "description": "Owner-only FCM token and subscribed blood group alert preferences.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "alertsEnabled": { "type": "boolean" },
+        "subscribedGroups": { "type": "array" },
+        "fcmToken": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "alertsEnabled", "subscribedGroups", "updatedAt"]
+    },
+    "BatchMetadata": {
+      "title": "BatchMetadata",
+      "description": "Batch moderator UID assignments per SSC batch year.",
+      "type": "object",
+      "properties": {
+        "batchYear": { "type": "string" },
+        "moderatorUids": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["batchYear", "moderatorUids"]
+    },
+    "Notice": {
+      "title": "Notice",
+      "description": "School notice, pinned announcement, job reference, or alumni news item.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string", "enum": ["notice", "job", "news"] },
+        "isPinned": { "type": "boolean" },
+        "audience": { "type": "string", "enum": ["all_members"] },
+        "postedBy": { "type": "string" },
+        "postedByName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "description", "isPinned", "audience", "postedBy", "createdAt"]
+    },
+    "BloodRequest": {
+      "title": "BloodRequest",
+      "description": "Urgent blood request posted by verified alumni.",
+      "type": "object",
+      "properties": {
+        "patientName": { "type": "string" },
+        "bloodGroup": { "type": "string", "enum": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] },
+        "targetBloodGroups": { "type": "array", "description": "Specific donor blood groups targeted for automated push alerts." },
+        "hospitalLocation": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "bagsNeeded": { "type": "integer" },
+        "status": { "type": "string", "enum": ["open", "fulfilled"] },
+        "postedBy": { "type": "string" },
+        "postedByName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["patientName", "bloodGroup", "hospitalLocation", "contactPhone", "bagsNeeded", "status", "postedBy", "createdAt"]
+    },
+    "AlumniEvent": {
+      "title": "AlumniEvent",
+      "description": "Upcoming reunion or school alumni gathering with attendee registration list.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "location": { "type": "string" },
+        "fee": { "type": "number" },
+        "description": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["alumni"] },
+        "registeredUsers": { "type": "array" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "date", "location", "fee", "description", "visibility", "registeredUsers", "createdBy", "createdAt"]
+    },
+    "FundCampaign": {
+      "title": "FundCampaign",
+      "description": "Alumni charity or development fundraising campaign.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "targetAmount": { "type": "number" },
+        "collectedAmount": { "type": "number" },
+        "spentAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "completed"] },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "targetAmount", "collectedAmount", "spentAmount", "status", "createdBy", "createdAt"]
+    },
+    "FundTransaction": {
+      "title": "FundTransaction",
+      "description": "Transparent income or expense ledger entry under a fund campaign.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["in", "out"] },
+        "amount": { "type": "number" },
+        "description": { "type": "string" },
+        "date": { "type": "string" },
+        "addedBy": { "type": "string" },
+        "addedByName": { "type": "string" },
+        "campaignVisibility": { "type": "string", "enum": ["alumni"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "amount", "description", "date", "addedBy", "campaignVisibility", "createdAt"]
+    },
+    "Teacher": {
+      "title": "Teacher",
+      "description": "Current, retired, or late faculty member of Sreepur Prasanna Academy.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "subject": { "type": "string" },
+        "tenure": { "type": "string" },
+        "phone": { "type": "string" },
+        "status": { "type": "string", "enum": ["current", "retired", "late"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "subject", "tenure", "phone", "status", "createdAt"]
+    },
+    "AppBranding": {
+      "title": "AppBranding",
+      "description": "Admin-configurable app logo, school titles, and subtitle.",
+      "type": "object",
+      "properties": {
+        "schoolNameBn": { "type": "string" },
+        "schoolNameEn": { "type": "string" },
+        "subtitleBn": { "type": "string" },
+        "subtitleEn": { "type": "string" },
+        "logoDataOrUrl": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["alumni"] },
+        "updatedBy": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["schoolNameBn", "schoolNameEn", "visibility", "updatedBy", "updatedAt"]
+    },
+    "AppUpdateInfo": {
+      "title": "AppUpdateInfo",
+      "description": "App release update announcement pushed by Super Admin and displayed in Profile.",
+      "type": "object",
+      "properties": {
+        "versionCode": { "type": "integer" },
+        "versionName": { "type": "string" },
+        "releaseNotes": { "type": "string" },
+        "downloadUrl": { "type": "string" },
+        "mandatory": { "type": "boolean" },
+        "visibility": { "type": "string", "enum": ["alumni"] },
+        "pushedBy": { "type": "string" },
+        "pushedByName": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["versionCode", "versionName", "releaseNotes", "mandatory", "visibility", "pushedBy", "updatedAt"]
+    },
+    "BatchGalleryPhoto": {
+      "title": "BatchGalleryPhoto",
+      "description": "Batch group photo uploaded by alumni and moderated by Super Admin.",
+      "type": "object",
+      "properties": {
+        "sscBatch": { "type": "string" },
+        "caption": { "type": "string" },
+        "imageDataOrUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "uploadedBy": { "type": "string" },
+        "uploadedByName": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sscBatch", "caption", "imageDataOrUrl", "status", "uploadedBy", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/app_config/{docId}": {
+      "schema": { "$ref": "#/entities/AppBranding" },
+      "description": "Global app branding and app update configuration editable by Super Admin."
+    },
+    "/users/{uid}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Alumni user profiles with RBAC role, verification status, and privacy-masked phone."
+    },
+    "/users/{uid}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateContact" },
+      "description": "Owner-only private contact phone storage when hidePhone is enabled."
+    },
+    "/batches/{batchYear}": {
+      "schema": { "$ref": "#/entities/BatchMetadata" },
+      "description": "Batch moderator assignment lookup per SSC batch."
+    },
+    "/notices/{noticeId}": {
+      "schema": { "$ref": "#/entities/Notice" },
+      "description": "Notices, pinned announcements, job references, and alumni news."
+    },
+    "/blood_requests/{reqId}": {
+      "schema": { "$ref": "#/entities/BloodRequest" },
+      "description": "Urgent blood requests posted by verified alumni."
+    },
+    "/events/{eventId}": {
+      "schema": { "$ref": "#/entities/AlumniEvent" },
+      "description": "School alumni events and reunions with attendee tracking."
+    },
+    "/funds/{campaignId}": {
+      "schema": { "$ref": "#/entities/FundCampaign" },
+      "description": "Donation and welfare fund campaigns."
+    },
+    "/funds/{campaignId}/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/FundTransaction" },
+      "description": "Transparent income and expense ledger entries per campaign."
+    },
+    "/teachers/{teacherId}": {
+      "schema": { "$ref": "#/entities/Teacher" },
+      "description": "Teachers directory (current, retired, late)."
+    },
+    "/batch_gallery/{photoId}": {
+      "schema": { "$ref": "#/entities/BatchGalleryPhoto" },
+      "description": "Batch group photo gallery requiring Super Admin approval before public display."
+    }
+  }
+}

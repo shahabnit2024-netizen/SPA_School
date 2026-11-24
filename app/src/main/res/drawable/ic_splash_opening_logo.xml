@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <size
+                android:width="288dp"
+                android:height="288dp" />
+            <solid android:color="#0D1943" />
+        </shape>
+    </item>
+    <item
+        android:width="196dp"
+        android:height="196dp"
+        android:drawable="@drawable/ic_spa_crest"
+        android:gravity="center" />
+</layer-list>

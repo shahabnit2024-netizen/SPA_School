@@ -1,0 +1,8 @@
+{
+  "name": "Sreepur Prasanna Academy (শ্রীপুর প্রসন্ন একাডেমি)",
+  "description": "Sreepur Prasanna Academy, Comilla Alumni Association Android app with alumni directory, blood bank, events & transparent fund ledger, and role-based moderation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

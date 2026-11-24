@@ -1,0 +1,504 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HELPERS ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isBootstrapAdmin() {
+      return isSignedIn() &&
+             ('email_verified' in request.auth.token) &&
+             request.auth.token.email_verified == true &&
+             ('email' in request.auth.token) &&
+             request.auth.token.email in ['sahabuddinsagor@gmail.com', 'shahab.nit2024@gmail.com'];
+    }
+
+    function hasUserDoc() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function callerUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSuperAdmin() {
+      return isBootstrapAdmin() ||
+             (hasUserDoc() && callerUser().role == 'admin' && callerUser().status == 'approved');
+    }
+
+    function isBatchModeratorFor(batch) {
+      return hasUserDoc() &&
+             callerUser().role == 'moderator' &&
+             callerUser().status == 'approved' &&
+             callerUser().sscBatch == batch;
+    }
+
+    function isApprovedMember() {
+      return isSuperAdmin() || (hasUserDoc() && callerUser().status == 'approved');
+    }
+
+    function isValidBloodGroup(bg) {
+      return bg in ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+    }
+
+    function isValidBatch(batch) {
+      return batch is string && batch.size() == 4 && batch.matches('^[0-9]{4}$');
+    }
+
+    function isValidRole(role) {
+      return role in ['admin', 'moderator', 'member'];
+    }
+
+    function isValidStatus(status) {
+      return status in ['pending', 'approved', 'rejected'];
+    }
+
+    function isValidUserProfile(data) {
+      return data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 80 &&
+             data.phone is string && data.phone.size() >= 4 && data.phone.size() <= 40 &&
+             data.hidePhone is bool &&
+             isValidBatch(data.sscBatch) &&
+             isValidBloodGroup(data.bloodGroup) &&
+             data.profession is string && data.profession.size() >= 2 && data.profession.size() <= 80 &&
+             data.city is string && data.city.size() >= 2 && data.city.size() <= 60 &&
+             data.country is string && data.country.size() >= 2 && data.country.size() <= 60 &&
+             isValidRole(data.role) &&
+             isValidStatus(data.status) &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 120)) &&
+             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 150000)) &&
+             (!('lastBloodDonateDate' in data) || (data.lastBloodDonateDate is timestamp && data.lastBloodDonateDate <= request.time)) &&
+             (!('visibleToUids' in data) || (data.visibleToUids is list && data.visibleToUids.size() <= 20 && (data.visibleToUids.size() == 0 || data.visibleToUids[0] is string))) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    function isValidPrivateContact(data) {
+      return data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+             data.phone is string && data.phone.size() >= 4 && data.phone.size() <= 40 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPrivateNotifications(data) {
+      return data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+             data.alertsEnabled is bool &&
+             data.subscribedGroups is list && data.subscribedGroups.size() <= 8 &&
+             (data.subscribedGroups.size() == 0 || isValidBloodGroup(data.subscribedGroups[0])) &&
+             (!('fcmToken' in data) || (data.fcmToken is string && data.fcmToken.size() <= 512)) &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidBatchDoc(data) {
+      return isValidBatch(data.batchYear) &&
+             data.moderatorUids is list && data.moderatorUids.size() <= 20 &&
+             (data.moderatorUids.size() == 0 || data.moderatorUids[0] is string) &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    function isValidNotice(data) {
+      return data.title is string && data.title.size() >= 2 && data.title.size() <= 140 &&
+             data.description is string && data.description.size() >= 2 && data.description.size() <= 3000 &&
+             data.isPinned is bool &&
+             data.audience == 'all_members' &&
+             data.postedBy is string && data.postedBy.size() >= 1 && data.postedBy.size() <= 128 &&
+             (!('category' in data) || data.category in ['notice', 'job', 'news']) &&
+             (!('postedByName' in data) || (data.postedByName is string && data.postedByName.size() <= 80)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidBloodRequest(data) {
+      return data.patientName is string && data.patientName.size() >= 2 && data.patientName.size() <= 80 &&
+             isValidBloodGroup(data.bloodGroup) &&
+             (!('targetBloodGroups' in data) || (data.targetBloodGroups is list && data.targetBloodGroups.size() >= 1 && data.targetBloodGroups.size() <= 8 && isValidBloodGroup(data.targetBloodGroups[0]))) &&
+             data.hospitalLocation is string && data.hospitalLocation.size() >= 2 && data.hospitalLocation.size() <= 160 &&
+             data.contactPhone is string && data.contactPhone.size() >= 6 && data.contactPhone.size() <= 30 &&
+             data.bagsNeeded is int && data.bagsNeeded >= 1 && data.bagsNeeded <= 20 &&
+             data.status in ['open', 'fulfilled'] &&
+             data.postedBy is string && data.postedBy.size() >= 1 && data.postedBy.size() <= 128 &&
+             (!('postedByName' in data) || (data.postedByName is string && data.postedByName.size() <= 80)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidEvent(data) {
+      return data.title is string && data.title.size() >= 2 && data.title.size() <= 140 &&
+             data.date is string && data.date.size() >= 2 && data.date.size() <= 60 &&
+             data.location is string && data.location.size() >= 2 && data.location.size() <= 160 &&
+             (data.fee is int || data.fee is float) && data.fee >= 0 && data.fee <= 1000000 &&
+             data.description is string && data.description.size() >= 2 && data.description.size() <= 3000 &&
+             data.visibility == 'alumni' &&
+             data.registeredUsers is list && data.registeredUsers.size() <= 500 &&
+             (data.registeredUsers.size() == 0 || data.registeredUsers[0] is string) &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidFund(data) {
+      return data.title is string && data.title.size() >= 2 && data.title.size() <= 140 &&
+             (data.targetAmount is int || data.targetAmount is float) && data.targetAmount > 0 && data.targetAmount <= 100000000 &&
+             (data.collectedAmount is int || data.collectedAmount is float) && data.collectedAmount >= 0 && data.collectedAmount <= 100000000 &&
+             (data.spentAmount is int || data.spentAmount is float) && data.spentAmount >= 0 && data.spentAmount <= 100000000 &&
+             data.status in ['active', 'completed'] &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidTransaction(data) {
+      return data.type in ['in', 'out'] &&
+             (data.amount is int || data.amount is float) && data.amount > 0 && data.amount <= 10000000 &&
+             data.description is string && data.description.size() >= 2 && data.description.size() <= 300 &&
+             data.date is string && data.date.size() >= 2 && data.date.size() <= 60 &&
+             data.addedBy is string && data.addedBy.size() >= 1 && data.addedBy.size() <= 128 &&
+             (!('addedByName' in data) || (data.addedByName is string && data.addedByName.size() <= 80)) &&
+             data.campaignVisibility == 'alumni' &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidTeacher(data) {
+      return data.name is string && data.name.size() >= 2 && data.name.size() <= 80 &&
+             data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 80 &&
+             data.tenure is string && data.tenure.size() >= 2 && data.tenure.size() <= 60 &&
+             data.phone is string && data.phone.size() >= 4 && data.phone.size() <= 30 &&
+             data.status in ['current', 'retired', 'late'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidBranding(data) {
+      return data.schoolNameBn is string && data.schoolNameBn.size() >= 2 && data.schoolNameBn.size() <= 120 &&
+             data.schoolNameEn is string && data.schoolNameEn.size() >= 2 && data.schoolNameEn.size() <= 120 &&
+             (!('subtitleBn' in data) || (data.subtitleBn is string && data.subtitleBn.size() <= 120)) &&
+             (!('subtitleEn' in data) || (data.subtitleEn is string && data.subtitleEn.size() <= 120)) &&
+             (!('logoDataOrUrl' in data) || (data.logoDataOrUrl is string && data.logoDataOrUrl.size() <= 300000)) &&
+             data.visibility == 'alumni' &&
+             data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidAppUpdate(data) {
+      return data.versionCode is int && data.versionCode >= 1 && data.versionCode <= 1000000 &&
+             data.versionName is string && data.versionName.size() >= 1 && data.versionName.size() <= 40 &&
+             data.releaseNotes is string && data.releaseNotes.size() >= 2 && data.releaseNotes.size() <= 2000 &&
+             (!('downloadUrl' in data) || (data.downloadUrl is string && data.downloadUrl.size() <= 500)) &&
+             data.mandatory is bool &&
+             data.visibility == 'alumni' &&
+             data.pushedBy is string && data.pushedBy.size() >= 1 && data.pushedBy.size() <= 128 &&
+             (!('pushedByName' in data) || (data.pushedByName is string && data.pushedByName.size() <= 80)) &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidBatchGalleryPhoto(data) {
+      return isValidBatch(data.sscBatch) &&
+             data.caption is string && data.caption.size() >= 2 && data.caption.size() <= 300 &&
+             data.imageDataOrUrl is string && data.imageDataOrUrl.size() >= 10 && data.imageDataOrUrl.size() <= 400000 &&
+             isValidStatus(data.status) &&
+             data.uploadedBy is string && data.uploadedBy.size() >= 1 && data.uploadedBy.size() <= 128 &&
+             (!('uploadedByName' in data) || (data.uploadedByName is string && data.uploadedByName.size() <= 80)) &&
+             (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 128)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    // --- COLLECTIONS ---
+
+    match /app_config/{docId} {
+      allow get: if isSignedIn() && docId in ['branding', 'update_info'];
+      allow list: if isSignedIn() && resource.data.visibility == 'alumni';
+      allow create, update: if isSuperAdmin() &&
+                               (
+                                 (docId == 'branding' &&
+                                  incoming().keys().hasAll(['schoolNameBn', 'schoolNameEn', 'visibility', 'updatedBy', 'updatedAt']) &&
+                                  incoming().keys().hasOnly(['schoolNameBn', 'schoolNameEn', 'subtitleBn', 'subtitleEn', 'logoDataOrUrl', 'visibility', 'updatedBy', 'updatedAt']) &&
+                                  isValidBranding(incoming())) ||
+                                 (docId == 'update_info' &&
+                                  incoming().keys().hasAll(['versionCode', 'versionName', 'releaseNotes', 'mandatory', 'visibility', 'pushedBy', 'updatedAt']) &&
+                                  incoming().keys().hasOnly(['versionCode', 'versionName', 'releaseNotes', 'downloadUrl', 'mandatory', 'visibility', 'pushedBy', 'pushedByName', 'updatedAt']) &&
+                                  isValidAppUpdate(incoming()))
+                               );
+      allow delete: if isSuperAdmin() && docId in ['branding', 'update_info'];
+    }
+
+    match /users/{uid} {
+      allow get: if isSignedIn() && isValidId(uid) && (
+        request.auth.uid == uid ||
+        isSuperAdmin() ||
+        (isApprovedMember() && resource.data.status == 'approved') ||
+        isBatchModeratorFor(resource.data.sscBatch)
+      );
+
+      allow list: if isSignedIn() && (
+        isBootstrapAdmin() ||
+        resource.data.status == 'approved' ||
+        request.auth.uid in resource.data.visibleToUids
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(uid) &&
+                       request.auth.uid == uid &&
+                       incoming().uid == request.auth.uid &&
+                       incoming().keys().hasAll(['uid', 'name', 'phone', 'hidePhone', 'sscBatch', 'bloodGroup', 'profession', 'city', 'country', 'role', 'status', 'createdAt']) &&
+                       incoming().keys().hasOnly(['uid', 'email', 'name', 'phone', 'hidePhone', 'sscBatch', 'bloodGroup', 'lastBloodDonateDate', 'profession', 'city', 'country', 'photoUrl', 'role', 'status', 'visibleToUids', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming()) &&
+                       (
+                         (incoming().role == 'member' && incoming().status == 'approved') ||
+                         (isBootstrapAdmin() && incoming().role == 'admin' && incoming().status == 'approved')
+                       );
+
+      allow update: if isSignedIn() &&
+                       isValidId(uid) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().uid == existing().uid &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         // Tier 1: Super Admin can update any user profile/role/approval fields
+                         (isSuperAdmin() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'hidePhone', 'sscBatch', 'bloodGroup', 'lastBloodDonateDate', 'profession', 'city', 'country', 'photoUrl', 'status', 'role', 'visibleToUids', 'updatedAt'])) ||
+                         // Tier 2: Batch Moderator can approve/reject ONLY users in their own sscBatch
+                         (isBatchModeratorFor(existing().sscBatch) &&
+                          incoming().sscBatch == existing().sscBatch &&
+                          incoming().role == existing().role &&
+                          incoming().status in ['approved', 'rejected'] &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+                         // Tier 3: Profile Owner can edit their own profile fields or auto-activate a legacy pending account
+                         (request.auth.uid == uid &&
+                          incoming().role == existing().role &&
+                          (
+                            (incoming().status == existing().status &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'hidePhone', 'sscBatch', 'bloodGroup', 'lastBloodDonateDate', 'profession', 'city', 'country', 'photoUrl', 'visibleToUids', 'updatedAt'])) ||
+                            (existing().status == 'pending' && incoming().status == 'approved' &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+                            (existing().status == 'rejected' && incoming().status == 'approved' &&
+                             incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'hidePhone', 'sscBatch', 'bloodGroup', 'lastBloodDonateDate', 'profession', 'city', 'country', 'photoUrl', 'visibleToUids', 'status', 'updatedAt']))
+                          ))
+                       );
+
+      allow delete: if isSuperAdmin() && isValidId(uid);
+
+      match /private/{docId} {
+        allow get, list: if isSignedIn() && isValidId(uid) && (request.auth.uid == uid || isSuperAdmin());
+        allow create, update: if isSignedIn() && isValidId(uid) && isValidId(docId) &&
+                                 request.auth.uid == uid &&
+                                 incoming().uid == request.auth.uid &&
+                                 (
+                                   (docId == 'contact' &&
+                                    incoming().keys().hasAll(['uid', 'phone', 'updatedAt']) &&
+                                    incoming().keys().hasOnly(['uid', 'phone', 'updatedAt']) &&
+                                    isValidPrivateContact(incoming())) ||
+                                   (docId == 'notifications' &&
+                                    incoming().keys().hasAll(['uid', 'alertsEnabled', 'subscribedGroups', 'updatedAt']) &&
+                                    incoming().keys().hasOnly(['uid', 'alertsEnabled', 'subscribedGroups', 'fcmToken', 'updatedAt']) &&
+                                    isValidPrivateNotifications(incoming()))
+                                 );
+        allow delete: if isSignedIn() && isValidId(uid) && (request.auth.uid == uid || isSuperAdmin());
+      }
+    }
+
+    match /batches/{batchYear} {
+      allow get: if isSignedIn() && isValidBatch(batchYear);
+      allow list: if isSignedIn() && isValidBatch(resource.data.batchYear);
+      allow create, update: if isSuperAdmin() &&
+                               isValidBatch(batchYear) &&
+                               incoming().batchYear == batchYear &&
+                               incoming().keys().hasAll(['batchYear', 'moderatorUids']) &&
+                               incoming().keys().hasOnly(['batchYear', 'moderatorUids', 'updatedAt']) &&
+                               isValidBatchDoc(incoming());
+      allow delete: if isSuperAdmin() && isValidBatch(batchYear);
+    }
+
+    match /notices/{noticeId} {
+      allow get: if isSignedIn() && isValidId(noticeId) && isApprovedMember();
+      allow list: if isSignedIn() && (
+        resource.data.audience == 'all_members' ||
+        resource.data.postedBy == request.auth.uid ||
+        isBootstrapAdmin()
+      );
+      allow create: if isSignedIn() &&
+                       isValidId(noticeId) &&
+                       incoming().keys().hasAll(['title', 'description', 'isPinned', 'audience', 'postedBy', 'createdAt']) &&
+                       incoming().keys().hasOnly(['title', 'description', 'category', 'isPinned', 'audience', 'postedBy', 'postedByName', 'createdAt']) &&
+                       isValidNotice(incoming()) &&
+                       incoming().postedBy == request.auth.uid &&
+                       (
+                         isSuperAdmin() ||
+                         (isApprovedMember() && incoming().isPinned == false && incoming().category in ['job', 'news'])
+                       );
+      allow update: if isSuperAdmin() &&
+                       isValidId(noticeId) &&
+                       isValidNotice(incoming()) &&
+                       incoming().postedBy == existing().postedBy &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'category', 'isPinned']);
+      allow delete: if isValidId(noticeId) && (isSuperAdmin() || (isApprovedMember() && existing().postedBy == request.auth.uid));
+    }
+
+    match /blood_requests/{reqId} {
+      allow get: if isSignedIn() && isValidId(reqId) && isApprovedMember();
+      allow list: if isSignedIn() && (
+        resource.data.status in ['open', 'fulfilled'] ||
+        resource.data.postedBy == request.auth.uid ||
+        isBootstrapAdmin()
+      );
+      allow create: if isApprovedMember() &&
+                       isValidId(reqId) &&
+                       incoming().keys().hasAll(['patientName', 'bloodGroup', 'hospitalLocation', 'contactPhone', 'bagsNeeded', 'status', 'postedBy', 'createdAt']) &&
+                       incoming().keys().hasOnly(['patientName', 'bloodGroup', 'targetBloodGroups', 'hospitalLocation', 'contactPhone', 'bagsNeeded', 'status', 'postedBy', 'postedByName', 'createdAt']) &&
+                       isValidBloodRequest(incoming()) &&
+                       incoming().postedBy == request.auth.uid &&
+                       incoming().status == 'open';
+      allow update: if isSignedIn() &&
+                       isValidId(reqId) &&
+                       isValidBloodRequest(incoming()) &&
+                       incoming().postedBy == existing().postedBy &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         (isSuperAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['patientName', 'bloodGroup', 'targetBloodGroups', 'hospitalLocation', 'contactPhone', 'bagsNeeded', 'status'])) ||
+                         (existing().status != 'fulfilled' && existing().postedBy == request.auth.uid && incoming().status == 'fulfilled' && incoming().diff(existing()).affectedKeys().hasOnly(['status']))
+                       );
+      allow delete: if isValidId(reqId) && (isSuperAdmin() || (isApprovedMember() && existing().postedBy == request.auth.uid));
+    }
+
+    match /events/{eventId} {
+      allow get: if isSignedIn() && isValidId(eventId) && isApprovedMember();
+      allow list: if isSignedIn() && (
+        resource.data.visibility == 'alumni' ||
+        resource.data.createdBy == request.auth.uid ||
+        isBootstrapAdmin()
+      );
+      allow create: if isSuperAdmin() &&
+                       isValidId(eventId) &&
+                       incoming().keys().hasAll(['title', 'date', 'location', 'fee', 'description', 'visibility', 'registeredUsers', 'createdBy', 'createdAt']) &&
+                       incoming().keys().hasOnly(['title', 'date', 'location', 'fee', 'description', 'visibility', 'registeredUsers', 'createdBy', 'createdAt']) &&
+                       isValidEvent(incoming()) &&
+                       incoming().createdBy == request.auth.uid;
+      allow update: if isSignedIn() &&
+                       isValidId(eventId) &&
+                       isValidEvent(incoming()) &&
+                       incoming().createdBy == existing().createdBy &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         (isSuperAdmin() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'date', 'location', 'fee', 'description', 'registeredUsers'])) ||
+                         (isApprovedMember() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['registeredUsers']) &&
+                          (
+                            (incoming().registeredUsers.hasAll(existing().registeredUsers) &&
+                             incoming().registeredUsers.size() == existing().registeredUsers.size() + 1 &&
+                             request.auth.uid in incoming().registeredUsers) ||
+                            (existing().registeredUsers.hasAll(incoming().registeredUsers) &&
+                             existing().registeredUsers.size() == incoming().registeredUsers.size() + 1 &&
+                             !(request.auth.uid in incoming().registeredUsers))
+                          ))
+                       );
+      allow delete: if isSuperAdmin() && isValidId(eventId);
+    }
+
+    match /funds/{campaignId} {
+      allow get: if isSignedIn() && isValidId(campaignId) && isApprovedMember();
+      allow list: if isSignedIn() && (
+        resource.data.status in ['active', 'completed'] ||
+        resource.data.createdBy == request.auth.uid ||
+        isBootstrapAdmin()
+      );
+      allow create: if isSuperAdmin() &&
+                       isValidId(campaignId) &&
+                       incoming().keys().hasAll(['title', 'targetAmount', 'collectedAmount', 'spentAmount', 'status', 'createdBy', 'createdAt']) &&
+                       incoming().keys().hasOnly(['title', 'targetAmount', 'collectedAmount', 'spentAmount', 'status', 'createdBy', 'createdAt']) &&
+                       isValidFund(incoming()) &&
+                       incoming().createdBy == request.auth.uid;
+      allow update: if isSuperAdmin() &&
+                       isValidId(campaignId) &&
+                       isValidFund(incoming()) &&
+                       incoming().createdBy == existing().createdBy &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['title', 'targetAmount', 'collectedAmount', 'spentAmount', 'status']);
+      allow delete: if isSuperAdmin() && isValidId(campaignId);
+
+      match /transactions/{txId} {
+        allow get: if isSignedIn() && isValidId(campaignId) && isValidId(txId) && isApprovedMember();
+        allow list: if isSignedIn() && isValidId(campaignId) && (
+          resource.data.campaignVisibility == 'alumni' ||
+          resource.data.addedBy == request.auth.uid ||
+          isBootstrapAdmin()
+        );
+        allow create: if isSuperAdmin() &&
+                         isValidId(campaignId) &&
+                         isValidId(txId) &&
+                         exists(/databases/$(database)/documents/funds/$(campaignId)) &&
+                         incoming().keys().hasAll(['type', 'amount', 'description', 'date', 'addedBy', 'campaignVisibility', 'createdAt']) &&
+                         incoming().keys().hasOnly(['type', 'amount', 'description', 'date', 'addedBy', 'addedByName', 'campaignVisibility', 'createdAt']) &&
+                         isValidTransaction(incoming()) &&
+                         incoming().addedBy == request.auth.uid;
+        allow update, delete: if isSuperAdmin() && isValidId(campaignId) && isValidId(txId);
+      }
+    }
+
+    match /teachers/{teacherId} {
+      allow get: if isSignedIn() && isValidId(teacherId) && isApprovedMember();
+      allow list: if isSignedIn() && (
+        resource.data.status in ['current', 'retired', 'late'] ||
+        isBootstrapAdmin()
+      );
+      allow create: if isSuperAdmin() &&
+                       isValidId(teacherId) &&
+                       incoming().keys().hasAll(['name', 'subject', 'tenure', 'phone', 'status', 'createdAt']) &&
+                       incoming().keys().hasOnly(['name', 'subject', 'tenure', 'phone', 'status', 'createdAt']) &&
+                       isValidTeacher(incoming());
+      allow update: if isSuperAdmin() &&
+                       isValidId(teacherId) &&
+                       isValidTeacher(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'subject', 'tenure', 'phone', 'status']);
+      allow delete: if isSuperAdmin() && isValidId(teacherId);
+    }
+
+    match /batch_gallery/{photoId} {
+      allow get: if isSignedIn() && isValidId(photoId) && (
+        (isApprovedMember() && resource.data.status == 'approved') ||
+        resource.data.uploadedBy == request.auth.uid ||
+        isSuperAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.status == 'approved' ||
+        resource.data.uploadedBy == request.auth.uid ||
+        isSuperAdmin()
+      );
+      allow create: if isApprovedMember() &&
+                       isValidId(photoId) &&
+                       incoming().keys().hasAll(['sscBatch', 'caption', 'imageDataOrUrl', 'status', 'uploadedBy', 'createdAt']) &&
+                       incoming().keys().hasOnly(['sscBatch', 'caption', 'imageDataOrUrl', 'status', 'uploadedBy', 'uploadedByName', 'reviewedBy', 'createdAt', 'updatedAt']) &&
+                       isValidBatchGalleryPhoto(incoming()) &&
+                       incoming().uploadedBy == request.auth.uid &&
+                       (
+                         incoming().status == 'pending' ||
+                         (isSuperAdmin() && incoming().status == 'approved')
+                       );
+      allow update: if isSuperAdmin() &&
+                       isValidId(photoId) &&
+                       isValidBatchGalleryPhoto(incoming()) &&
+                       incoming().uploadedBy == existing().uploadedBy &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'caption', 'sscBatch', 'reviewedBy', 'updatedAt']);
+      allow delete: if isValidId(photoId) && (
+        isSuperAdmin() ||
+        (isApprovedMember() && existing().uploadedBy == request.auth.uid)
+      );
+    }
+  }
+}
